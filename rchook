@@ -1,0 +1,203 @@
+#!/bin/bash
+#
+# rchook
+#
+# See https://github.com/musictheory/rchook for
+# instructions on setting up rchook with Xcode
+#
+#
+
+# Settings
+output_archive=~rc
+
+
+# We only run during an Xcode's Archive scheme, which I have set to
+# use build configuration "Release"
+#
+if [ -z "$CONFIGURATION" ] || [ $CONFIGURATION != Release ]; then
+    exit 0
+fi
+
+# temporary directory for holding rchook files between invocations
+# created during xcode_app_build_pre_action().  Removed in
+# xcode_app_archive_post_action()
+#
+path_tmp=/tmp/rchook
+
+
+# Cleanup script - ran before exit_if_git_not_clean() exits 
+# Restores original Info.plist to main project
+#
+path_cleanup_sh=$path_tmp/cleanup.sh
+
+
+# List of project directories.  Appended to by main project and
+# all sub-projects during do_xcode_build_phase()
+#
+path_project_dirs=$path_tmp/project_dirs
+
+
+# Path of Info.plist inside of main project directory.  
+# This is overwritten in place in do_xcode_app_build_pre_action()
+# with the even archive build number
+# 
+path_project_plist=${PROJECT_DIR}/${INFOPLIST_FILE}
+
+
+# Backup copy of original Info.plist - used when cleanup
+# script is rain during a failed build
+#
+path_original_plist=$path_tmp/$PROJECT_NAME.original.plist
+
+
+# New Info.plist file written at very end of Archive process.
+# This contains the next odd development build number
+#
+path_final_plist=$path_tmp/$PROJECT_NAME.final.plist
+
+
+get_plist_build ()
+{
+    echo -n $(defaults read "$1" CFBundleVersion | sed 's/\s//g' )
+}
+
+
+set_plist_build ()
+{
+    defaults write "$1" CFBundleVersion "$2"
+}
+
+
+exit_if_git_not_clean ()
+{
+    if [ -f "$path_tmp/$PROJECT_NAME-git-ok" ]; then
+        return
+    fi
+
+    pushd "$PROJECT_DIR" > /dev/null
+    git_result=$(expr $(git status --porcelain | wc -l))
+    popd > /dev/null
+
+    if [ $git_result -gt 0 ]; then
+        echo "error: $PROJECT_NAME: Needs git commit"
+        $path_cleanup_sh
+        exit 1
+    fi
+
+    touch "$path_tmp/$PROJECT_NAME-git-ok"
+}
+
+
+do_xcode_app_build_pre_action ()
+{
+    rm -rf $path_tmp
+    mkdir $path_tmp
+
+    # Create cleanup.sh
+    touch $path_cleanup_sh
+    echo "#!/bin/sh" >> $path_cleanup_sh
+    echo "cp '$path_original_plist' '$path_project_plist'" >> $path_cleanup_sh
+    echo "rm -rf $path_tmp"
+    chmod +x $path_cleanup_sh
+
+    exit_if_git_not_clean
+
+    # Make backup copy of .plist
+    if [ -f "$path_project_plist" ]; then
+        cp "$path_project_plist" "$path_original_plist"
+    fi
+
+    # Get version in plist
+    build_number=$(get_plist_build "$path_project_plist")
+
+    if [ $(expr $build_number % 2) -eq "1" ]; then
+        # Build number is currently odd, set archive to next odd number (+1)
+        # and dev to next even number (+2)
+        archive_build_number=$(expr $build_number + 1)
+        dev_build_number=$(expr $build_number + 2)
+    else
+        # Build number is currently even, set archive to next even number (+2)
+        # and dev to next odd number (+3)
+        archive_build_number=$(expr $build_number + 2)
+        dev_build_number=$(expr $build_number + 3)
+    fi
+
+    cp "$path_project_plist" "$path_final_plist"
+    set_plist_build "$path_final_plist"   "$dev_build_number"
+    set_plist_build "$path_project_plist" "$archive_build_number"
+}
+
+
+do_xcode_build_phase ()
+{
+    exit_if_git_not_clean
+    echo "$PROJECT_DIR" >> $path_project_dirs
+}
+
+
+do_xcode_app_archive_post_action ()
+{
+    # Grab the build numbers again
+    dev_build_number=$(get_plist_build "$path_final_plist")
+    archive_build_number=$(get_plist_build "$path_project_plist")
+
+    archive_path="$output_archive/$PROJECT_NAME/$PROJECT_NAME-$archive_build_number"
+    mkdir -p "$archive_path"
+
+    # For each project, commit (if needed) and tag with $PROJECT_NAME-$archive_build_number
+    #
+    cat $path_project_dirs | while read LINE ; do
+        pushd "$LINE" > /dev/null
+        git commit -a -m "Archiving $PROJECT_NAME-$archive_build_number"
+        git tag -f -a "$PROJECT_NAME-$archive_build_number" -m "Tagging $PROJECT_NAME-$archive_build_number"
+        popd > /dev/null
+    done
+
+    # Xcode has no UI to show build numbers, only marketing version numbers
+    # To work around this, we set the Comment field in Xcode to our build number
+    #
+    # Sadly, changes to the Info.plist in the xcarchive is not reflected in Xcode
+    # until the next launch.  To work around this, we will move the entire .xcarchive
+    # out of the Archives directory and into $path_tmp, modify the Info.plist, then
+    # copy it all back into the Xcode Archives directory (as well as our $output_archive) 
+    #
+    path_tmp_archive="$path_tmp/$PROJECT_NAME.xcarchive"
+    mv "$ARCHIVE_PATH" "$path_tmp_archive"
+    defaults write "$path_tmp_archive/Info.plist" Comment "$PROJECT_NAME-$archive_build_number"
+    cp -R "$path_tmp_archive" $(dirname "$ARCHIVE_PATH")/"$PROJECT_NAME-$archive_build_number.xcarchive"
+    cp -R "$path_tmp_archive" "$archive_path/$PROJECT_NAME-$archive_build_number.xcarchive"
+
+    # Copy each project directory into $output_archive
+    #
+    cat $path_project_dirs | while read LINE ; do
+        cp -R "$LINE" "$archive_path"
+    done
+
+    # Bump Info.plist build to development number and commit to git
+    #
+    cp "$path_final_plist" "$path_project_plist"
+
+    cat $path_project_dirs | while read LINE ; do
+        pushd "$LINE" > /dev/null
+        git commit -a -m "Setting Info.plist to development ($dev_build_number)"
+        popd > /dev/null
+    done
+
+    rm -rf $path_tmp
+}
+
+
+case $1 in
+    xcode-app-build-pre-action)
+        do_xcode_app_build_pre_action
+        ;;
+
+    xcode-app-archive-post-action)
+        do_xcode_app_archive_post_action
+        ;;
+
+    xcode-build-phase)
+        do_xcode_build_phase
+        ;;
+esac
+
