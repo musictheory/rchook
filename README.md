@@ -6,8 +6,8 @@ In reponse to a Product->Archive in Xcode, automatically:
  2. Bump build number to next even number
  3. Create .xcarchive file
  4. Do a `git commit` / `git tag` of main project and all sub-projects
- 5. Bump build number to next odd number
- 6. Commit odd build number
+ 5. Bump build number to next odd number, do another `git commit`
+ 6. Copy .xcarchive and all source of all projects to external archive directory
 
 
 ## Why?
