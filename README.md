@@ -97,13 +97,43 @@ Each project can be cancelled during a Run Script Build Phase.
 The configuration for all of this looks like:
 
 Edit Scheme window for main project (Tenuto):
-<img>
-<img>
+
+<img src="https://raw.github.com/musictheory/rchook/master/images/ss1.jpg" width="342" height="180"><br>
+<img src="https://raw.github.com/musictheory/rchook/master/images/ss2.jpg" width="342" height="180"><br>
 
 Build Phases window for **both main project and sub-projects**:
-<img>
+
+<img src="https://raw.github.com/musictheory/rchook/master/images/ss3.jpg" width="311" height="293"><br>
 
 
+## The Actual Script (rchook)
+
+Upon hitting Product->Archive in Xcode
+
+ 1. Tenuto Build scheme starts, `rchook` is called with `xcode-app-build-pre-action` argument
+  A. Creates a fresh `/tmp/rchook` directory
+  B. Modifies the main project's Info.plist to prepare for an archive release.
+     Archives are given even build numbers.
+  C. Creates a backup copy of the original Info.plist
+  D. Creates an Info.plist with the next development build number (odd).  
+  E. Creates `/tmp/rchook/cleanup.sh`, which is called to revert everything if we abort
+ 2. For each project (Tenuto, IXCore, MTCore), `rchook` is called with the `xcode-build-phase` argument
+  A. Ensures that the git working directory is clean.  If not, exits out and causes Xcode
+     to abort the archiving process.  This is needed since we will be commit to the git
+     repository at the end of the archive process.
+  B. Concatenates current `$PROJECT_DIR` into `/tmp/project_dirs`
+ 3. Tenuto Build scheme finishes
+ 4. Tenuto Archive scheme starts
+ 5. .xcarchive producted
+ 6. Tenuto Archive scheme finishes, `rchook` is called with the `xcode-app-build-post-action` argument
+  A. Iterate over each project directory in `/tmp/project_dirs`.  Change the working directory and `git commit` and `git tag`
+  B. Performs some trickery to set the comment of Xcode's archive to the build number
+  C. Create a new directory on the file system, copies .xcarchive file, as well as source files for each project to the directory
+  D. Copy the new Info.plist created in Step 1D to the main project's directory
+  E. Commit the new Info.plist using `git commit`
 
 
+## Resources
+
+These resources were helpful when developing rchook:
 http://stackoverflow.com/questions/9855955/xcode-increment-build-number-only-during-archive
