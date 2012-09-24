@@ -1,10 +1,13 @@
 # rchook
 
+In reponse to a Product->Archive in Xcode, automatically:
 
-Why
-======
-
-Make Xcode bump build #, tag git, and archive files on Product->Archive
+ 1. Verify all git working directories are clean
+ 2. Bump build number to next even number
+ 3. Create .xcarchive file
+ 4. Do a `git commit` / `git tag` of main project and all sub-projects
+ 5. Bump build number to next odd number
+ 6. Commit odd build number
 
 
 ## Why?
