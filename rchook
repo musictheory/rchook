@@ -182,15 +182,19 @@ do_xcode_app_archive_post_action ()
     APP_BUNDLE=$(find "$path_tmp_archive/Products" -name "*.app")
     APP_BASENAME=$(basename "$APP_BUNDLE")
 
-    while getopts "s:z:" opt; do
+    while getopts "s:z:u:" opt; do
         case $opt in
         s)
             codesign -s "$OPTARG" -f "$path_tmp_archive/Products/$APP_BUNDLE"
             ;;        
         z)
             pushd "$APP_BUNDLE"/.. > /dev/null
-            zip -r "$OPTARG-$archive_build_number" "$APP_BASENAME"
+            ZIP_FILE="$OPTARG-$archive_build_number"
+            zip -r "$ZIP_FILE" "$APP_BASENAME"
             popd > /dev/null
+            ;;
+        u)
+            scp "$ZIP_FILE.zip" "$OPTARG"
             ;;
         esac
     done
