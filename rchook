@@ -177,6 +177,24 @@ do_xcode_app_archive_post_action ()
     #
     cp "$path_final_plist" "$path_project_plist"
 
+    # Handle additional options
+    #
+    APP_BUNDLE=$(find "$path_tmp_archive/Products" -name "*.app")
+    APP_BASENAME=$(basename "$APP_BUNDLE")
+
+    while getopts "s:z:" opt; do
+        case $opt in
+        s)
+            codesign -s "$OPTARG" -f "$path_tmp_archive/Products/$APP_BUNDLE"
+            ;;        
+        z)
+            pushd "$APP_BUNDLE"/.. > /dev/null
+            zip -r "$OPTARG-$archive_build_number" "$APP_BASENAME"
+            popd > /dev/null
+            ;;
+        esac
+    done
+
     cat $path_project_dirs | while read LINE ; do
         pushd "$LINE" > /dev/null
         git commit -a -m "Setting Info.plist to development ($dev_build_number)"
@@ -193,7 +211,7 @@ case $1 in
         ;;
 
     xcode-app-archive-post-action)
-        do_xcode_app_archive_post_action
+        do_xcode_app_archive_post_action "${@:2}"
         ;;
 
     xcode-build-phase)
