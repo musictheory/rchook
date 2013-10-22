@@ -135,6 +135,20 @@ Upon hitting Product->Archive in Xcode
   4. Copy the new Info.plist created in Step 1.4 to the main project's directory
   5. Commit the new Info.plist using `git commit`
 
+## Options to xcode-app-build-post-action
+
+The `xcode-app-build-post-action` command supports these additional options.
+
+    -s  Resign the .app using the provided identity
+    -z  Create a zip file of the .app
+    -u  Upload the zip file (via -z) using scp
+
+For example, to sign, zip, and upload a Mac OS X app to a web server for beta testing:
+
+    rchook xcode-app-build-post-action \ 
+        -s "Developer ID Application: John Appleseed (0AAA00AA00A)" \
+        -z "$HOME/Desktop/TheApp" \
+        -u "john@example.com:/path/to/www/betas/TheApp"
 
 ## Resources
 
