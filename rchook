@@ -14,9 +14,12 @@ output_archive=~rc
 # We only run during an Xcode's Archive scheme, which I have set to
 # use build configuration "Release"
 #
-if [ -z "$CONFIGURATION" ] || [ $CONFIGURATION != Release ]; then
+if [ -z "$CONFIGURATION" ] || ([[ "$CONFIGURATION" != *"Release"* ]] && [[ "$CONFIGURATION" != *"Submission"* ]]); then
+    echo "Bailing $CONFIGURATION"
     exit 0
 fi
+
+echo "Running rchook" $1
 
 # temporary directory for holding rchook files between invocations
 # created during xcode_app_build_pre_action().  Removed in
@@ -167,6 +170,9 @@ do_xcode_app_archive_post_action ()
     cp -R "$path_tmp_archive" $(dirname "$ARCHIVE_PATH")/"$PROJECT_NAME-$archive_build_number.xcarchive"
     cp -R "$path_tmp_archive" "$archive_path/$PROJECT_NAME-$archive_build_number.xcarchive"
 
+    export RCHOOK_ARCHIVE_BUILD_NUMBER=$archive_build_number
+    export RCHOOK_DEV_BUILD_NUMBER=$dev_build_number
+
     # Copy each project directory into $output_archive
     #
     cat $path_project_dirs | while read LINE ; do
@@ -177,12 +183,10 @@ do_xcode_app_archive_post_action ()
     #
     cp "$path_final_plist" "$path_project_plist"
 
-    # Handle additional options
-    #
-    APP_BUNDLE=$(find "$path_tmp_archive/Products" -name "*.app")
+    APP_BUNDLE=$(find "$path_tmp_archive/Products" -name "*.app" | head -1)
     APP_BASENAME=$(basename "$APP_BUNDLE")
 
-    while getopts "s:z:u:" opt; do
+    while getopts "s:z:u:f:" opt; do
         case $opt in
         s)
             codesign -s "$OPTARG" -f "$path_tmp_archive/Products/$APP_BUNDLE"
@@ -190,11 +194,14 @@ do_xcode_app_archive_post_action ()
         z)
             pushd "$APP_BUNDLE"/.. > /dev/null
             ZIP_FILE="$OPTARG-$archive_build_number"
-            zip -r "$ZIP_FILE" "$APP_BASENAME"
+            zip --symlinks -r "$ZIP_FILE" "$APP_BASENAME"
             popd > /dev/null
             ;;
         u)
             scp "$ZIP_FILE.zip" "$OPTARG"
+            ;;
+        f)
+            $OPTARG
             ;;
         esac
     done
